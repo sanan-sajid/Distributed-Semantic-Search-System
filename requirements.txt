@@ -1,0 +1,4 @@
+sentence-transformers==2.5.1
+numpy==1.24.3
+torch==2.2.1
+flask==3.0.2 
