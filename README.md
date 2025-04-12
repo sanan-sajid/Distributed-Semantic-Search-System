@@ -3,6 +3,11 @@
 A high‑performance, scalable search engine that uses modern NLP to deliver fast, context‑aware results across large document collections.
 
 ---
+## 🧱 System Architecture
+
+![System Architecture](Architecture.png)
+
+---
 
 ## 🚀 What This Project Does
 
