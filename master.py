@@ -60,7 +60,6 @@ class MasterServer:
             return []
     
     def merge_results(self, all_results: List[List[Dict]], top_k: int = 3) -> List[Dict]:
-        """Merge results from all workers and return top-k."""
         # Flatten all results
         flat_results = []
         for worker_results in all_results:
@@ -70,7 +69,7 @@ class MasterServer:
         return sorted(flat_results, key=lambda x: x['score'], reverse=True)[:top_k]
     
     def start(self):
-        """Start the master server."""
+        #Start the master server.
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_socket.bind(('localhost', self.port))
         server_socket.listen(5)

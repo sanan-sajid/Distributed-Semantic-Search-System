@@ -4,22 +4,21 @@ import json
 import logging
 import time
 
-# --- Configuration ---
+# Configuration 
 BUFFER_SIZE    = 4096
 END_MARKER     = "<END>"
-WORKER_PORTS   = [5001, 5002]   # base ports for your two workers
-MAX_RETRIES    = 5              # how many times to retry connecting
-RETRY_DELAY    = 0.1            # seconds between retries
+WORKER_PORTS   = [5001, 5002]   
+MAX_RETRIES    = 10         # 10 retries for worker connection
+RETRY_DELAY    = 2          # 2 sec delay between retries
 
-# --- Logging setup ---
+#  Logging setup 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
 app = Flask(__name__)
 
-# --- Socket helpers ---
 def receive_data(sock: socket.socket) -> str:
-    """Receive data until END_MARKER."""
+    #  Receive data until END_MARKER -> <END>.
     data = ""
     while True:
         chunk = sock.recv(BUFFER_SIZE).decode('utf-8')
@@ -32,14 +31,14 @@ def receive_data(sock: socket.socket) -> str:
     return data
 
 def send_data(sock: socket.socket, payload: dict):
-    """Send JSON payload + END_MARKER in BUFFER_SIZE chunks via sendall()."""
+
     data_str = json.dumps(payload) + END_MARKER
     for i in range(0, len(data_str), BUFFER_SIZE):
         chunk = data_str[i:i+BUFFER_SIZE]
         sock.sendall(chunk.encode('utf-8'))
 
 def send_admin_command(command: str, data: dict, worker_port: int) -> dict:
-    """Send an admin command ('list', 'add', 'remove') to worker_port+1000."""
+
     admin_port = worker_port + 1000
     last_err = None
 
@@ -62,13 +61,11 @@ def send_admin_command(command: str, data: dict, worker_port: int) -> dict:
             logging.error(f"[admin] unexpected error talking to worker {worker_port}: {e}")
             return {'status': 'error', 'message': str(e)}
 
-    # all retries failed
     msg = f"Could not connect to worker {worker_port} admin port {admin_port} after {MAX_RETRIES} attempts: {last_err}"
     logging.error(msg)
     return {'status': 'error', 'message': msg}
 
 
-# --- Master‐query helper (unchanged) ---
 def query_master(query: str, master_port: int = 5000) -> list:
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -82,7 +79,7 @@ def query_master(query: str, master_port: int = 5000) -> list:
         return []
 
 
-# --- Flask routes ---
+# Flask route
 @app.route('/')
 def home():
     return render_template('index.html')
@@ -130,26 +127,44 @@ def add_documents():
     docs = [d.strip() for d in docs if d.strip()]
     if not docs:
         return jsonify({'error': 'No valid documents provided'}), 400
+    
+    
+# Even partitioning of documents across workers
+    # n_workers     = len(WORKER_PORTS)
+    # per_worker    = len(docs) // n_workers
+    # remainder     = len(docs) % n_workers
+    # responses     = []
+    # errors        = []
+    # idx           = 0
+    # for i, port in enumerate(WORKER_PORTS):
+    #     count = per_worker + (1 if i < remainder else 0)
+    #     if count == 0:
+    #         continue
+    #     chunk = docs[idx:idx+count]
+    #     idx += count
+    #     resp = send_admin_command('add', {'documents': chunk}, port)
+    #     responses.append(resp)
+    #     if resp.get('status') != 'success':
+    #         errors.append(f"Worker {port}: {resp.get('message')}")
+    # status = 'success' if not errors else 'partial_success'
+    # return jsonify({'status': status, 'responses': responses, 'errors': errors or None})
 
-    # split evenly
-    n_workers     = len(WORKER_PORTS)
-    per_worker    = len(docs) // n_workers
-    remainder     = len(docs) % n_workers
-    responses     = []
-    errors        = []
-    idx           = 0
-
+    # Round-robin assignment of documents across workers
+    n_workers = len(WORKER_PORTS)
+    worker_docs = [[] for _ in range(n_workers)]
+    for i, doc in enumerate(docs):
+        worker_index = i % n_workers
+        worker_docs[worker_index].append(doc)
+    
+    responses = []
+    errors = []
     for i, port in enumerate(WORKER_PORTS):
-        count = per_worker + (1 if i < remainder else 0)
-        if count == 0:
-            continue
-        chunk = docs[idx:idx+count]
-        idx += count
-
-        resp = send_admin_command('add', {'documents': chunk}, port)
-        responses.append(resp)
-        if resp.get('status') != 'success':
-            errors.append(f"Worker {port}: {resp.get('message')}")
+        chunk = worker_docs[i]
+        if chunk:  
+            resp = send_admin_command('add', {'documents': chunk}, port)
+            responses.append(resp)
+            if resp.get('status') != 'success':
+                errors.append(f"Worker {port}: {resp.get('message')}")
 
     status = 'success' if not errors else 'partial_success'
     return jsonify({'status': status, 'responses': responses, 'errors': errors or None})
